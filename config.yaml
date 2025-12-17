@@ -1,0 +1,40 @@
+# Lichess Friction Analysis Configuration
+
+data:
+  pgn_source: "data/lichess_db_standard_rated.pgn.zst"
+  output_dir: "./output"
+  database_path: "./output/friction.db"
+  sample_size: 10000  # games to process, null for all
+
+filters:
+  min_rating: 1000
+  max_rating: 2500
+  min_time_control: 600  # seconds base time (10 minutes)
+  require_clocks: true
+  min_moves: 20
+
+engine:
+  path: "/usr/games/stockfish"
+  depth: 14  # Reduced for faster analysis (still accurate for blunder detection)
+  multipv: 5
+  threads: 4
+  hash_mb: 1024
+  skip_opening_moves: 8  # Skip first N moves (book moves)
+
+thresholds:
+  blunder_cp: 100
+  mistake_cp: 50
+  inaccuracy_cp: 25
+  time_pressure_seconds: 30
+  high_friction_multiplier: 1.5
+  low_friction_multiplier: 0.7
+  alternative_threshold_cp: 50  # moves within this of best = alternatives
+  premove_threshold: 0.5  # seconds, below this likely premove
+
+analysis:
+  control_variables:
+    - rating_band
+    - game_phase
+    - complexity
+  significance_level: 0.05
+  rating_bands: [1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500]
