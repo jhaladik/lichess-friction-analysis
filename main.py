@@ -85,19 +85,24 @@ def run_phase2_evaluate(config: dict, limit: Optional[int] = None):
     Phase 2: Evaluate positions with Stockfish.
 
     This is the slow part - requires engine evaluation.
+    Supports resumption: skips already-analyzed moves.
     """
     logger.info("=== Phase 2: Engine Evaluation ===")
 
     db_path = config['data']['database_path']
     db = Database(db_path)
 
-    # Get games that need evaluation
-    game_ids = db.get_games_without_analysis(limit or 10000)
-    logger.info(f"Found {len(game_ids)} games to analyze")
+    # Get games that need evaluation (including partially analyzed)
+    game_ids = db.get_games_needing_analysis(limit or 10000)
+    logger.info(f"Found {len(game_ids)} games needing analysis")
 
     if not game_ids:
-        logger.info("No games to analyze")
+        logger.info("All games fully analyzed")
         return
+
+    # Show current progress
+    stats = db.get_stats()
+    logger.info(f"Current progress: {stats['friction_records']} moves analyzed, {stats['blunders']} blunders found")
 
     encoder = PositionEncoder()
     friction_analyzer = FrictionAnalyzer(config)
@@ -125,10 +130,20 @@ def analyze_game(
     game_id: str,
     config: dict
 ):
-    """Analyze a single game and store friction records."""
+    """Analyze a single game and store friction records. Supports resumption."""
     moves = db.get_moves_for_analysis(game_id)
     if not moves:
         return
+
+    # Get game info for ratings
+    game_info = db.get_game_info(game_id)
+    if not game_info:
+        return
+    white_rating = game_info['white_rating']
+    black_rating = game_info['black_rating']
+
+    # Get already analyzed plies (for resumption)
+    analyzed_plies = db.get_analyzed_plies(game_id)
 
     # Config
     skip_opening = config.get('engine', {}).get('skip_opening_moves', 8)
@@ -142,6 +157,10 @@ def analyze_game(
 
         # Skip opening moves (book moves, not interesting for friction analysis)
         if ply <= skip_opening * 2:  # ply is half-moves
+            continue
+
+        # Skip already analyzed moves (resumption)
+        if ply in analyzed_plies:
             continue
 
         fen_before = move['fen_before']
@@ -168,8 +187,8 @@ def analyze_game(
         # Encode position features
         position_features = encoder.encode_from_fen(fen_before)
 
-        # Get player rating (TODO: get from game record)
-        player_rating = 1500
+        # Get player rating from game record
+        player_rating = white_rating if is_white else black_rating
 
         # Get player's think times for this game
         player_times = white_times if is_white else black_times

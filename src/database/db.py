@@ -278,8 +278,43 @@ class Database:
             """, (game_id,))
             return [dict(row) for row in cursor.fetchall()]
 
+    def get_game_info(self, game_id: str) -> Optional[Dict]:
+        """Get game metadata including ratings."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM games WHERE game_id = ?
+            """, (game_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_analyzed_plies(self, game_id: str) -> set:
+        """Get set of plies that already have friction analysis."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT ply FROM friction_analysis WHERE game_id = ?
+            """, (game_id,))
+            return {row[0] for row in cursor.fetchall()}
+
+    def get_games_needing_analysis(self, limit: int = 1000) -> List[str]:
+        """Get game IDs that need analysis (none or partial)."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            # Get games with fewer friction records than expected moves (after skip)
+            cursor.execute("""
+                SELECT g.game_id, g.num_moves, COUNT(fa.id) as analyzed_count
+                FROM games g
+                LEFT JOIN friction_analysis fa ON g.game_id = fa.game_id
+                GROUP BY g.game_id
+                HAVING analyzed_count < (g.num_moves - 16)  -- skip first 8 moves per side
+                ORDER BY analyzed_count ASC
+                LIMIT ?
+            """, (limit,))
+            return [row[0] for row in cursor.fetchall()]
+
     def get_games_without_analysis(self, limit: int = 1000) -> List[str]:
-        """Get game IDs that haven't been analyzed yet."""
+        """Get game IDs that haven't been analyzed yet (legacy, use get_games_needing_analysis)."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
